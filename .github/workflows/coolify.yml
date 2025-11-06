@@ -1,0 +1,15 @@
+name: build container -> coolify
+run-name: building container -> coolify
+on:
+  workflow_dispatch:              #Allow triggering this action manually
+  schedule:
+  - cron: '30 0 * * 6'            #Schedule build at 12:30AM every Saturday
+jobs:
+  coolify:
+  runs-on: ubuntu-latest
+  steps:
+  - uses: actions/checkout@v4
+  - name: run podman build
+  run: podman build -t coolify coolify
+  - name: push image to ghcr.io
+  run: podman push --creds=${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} coolify ghcr.io/ljrk0/coolify

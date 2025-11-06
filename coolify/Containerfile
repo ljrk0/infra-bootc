@@ -1,0 +1,86 @@
+FROM quay.io/fedora/fedora-bootc:43
+# automatically populated with --arch
+ARG TARGETARCH
+LABEL arch=$TARGETARCH
+
+# Custom: Link /data -> /var/data
+ARG COOLIFY_BASE=/data
+RUN mkdir -p /var/data
+RUN ln -s /var/data ${COOLIFY_BASE}
+
+# Prerequisites
+RUN systemctl enable sshd.service
+RUN dnf install -y git podman-compose podman-docker curl
+
+# 1. Create Directories
+RUN mkdir -p ${COOLIFY_BASE}/coolify/{source,ssh,applications,databases,backups,services,proxy,webhooks-during-maintenance}
+RUN mkdir -p ${COOLIFY_BASE}/coolify/ssh/{keys,mux}
+RUN mkdir -p ${COOLIFY_BASE}/coolify/proxy/dynamic
+
+# Generate & Add SSH Key
+COPY <<EOF /root/.ssh/authorized_keys
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBlZOTk7ApZ0YmfxOvnd873cbhooq348gkaySdKPrahR
+EOF
+RUN chmod 600 /root/.ssh/authorized_keys
+
+# 3. Setup Configuration Files
+RUN curl -fsSL https://cdn.coollabs.io/coolify/docker-compose.yml -o ${COOLIFY_BASE}/coolify/source/docker-compose.yml
+RUN curl -fsSL https://cdn.coollabs.io/coolify/docker-compose.prod.yml -o ${COOLIFY_BASE}/coolify/source/docker-compose.prod.yml
+RUN curl -fsSL https://cdn.coollabs.io/coolify/.env.production -o ${COOLIFY_BASE}/coolify/source/.env
+RUN curl -fsSL https://cdn.coollabs.io/coolify/upgrade.sh -o ${COOLIFY_BASE}/coolify/source/upgrade.sh
+
+# 4. Set Permissions
+RUN chown -R 9999:root ${COOLIFY_BASE}/coolify
+RUN chmod -R 700 ${COOLIFY_BASE}/coolify
+
+# 5. Generate Values
+COPY <<EOF /usr/share/containers/systemd/coolify-secretgen.service
+[Install]
+WantedBy=multi-user.target
+
+[Unit]
+Description=Coolify Generate Install Secrets
+ConditionFirstBoot=true
+
+[Service]
+ExecStart=sh /usr/share/containers/systemd/coolify-secretgen.sh
+EOF
+
+COPY <<EOF /usr/share/containers/systemd/coolify-secretgen.sh
+sed -i "s|APP_ID=.*|APP_ID=$(openssl rand -hex 16)|g" ${COOLIFY_BASE}/coolify/source/.env
+sed -i "s|APP_KEY=.*|APP_KEY=base64:$(openssl rand -base64 32)|g" ${COOLIFY_BASE}/coolify/source/.env
+sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=$(openssl rand -base64 32)|g" ${COOLIFY_BASE}/coolify/source/.env
+sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$(openssl rand -base64 32)|g" ${COOLIFY_BASE}/coolify/source/.env
+sed -i "s|PUSHER_APP_ID=.*|PUSHER_APP_ID=$(openssl rand -hex 32)|g" ${COOLIFY_BASE}/coolify/source/.env
+sed -i "s|PUSHER_APP_KEY=.*|PUSHER_APP_KEY=$(openssl rand -hex 32)|g" ${COOLIFY_BASE}/coolify/source/.env
+sed -i "s|PUSHER_APP_SECRET=.*|PUSHER_APP_SECRET=$(openssl rand -hex 32)|g" ${COOLIFY_BASE}/coolify/source/.env
+EOF
+
+# 6. Create Docker Network
+COPY <<EOF /usr/share/containers/systemd/coolify-setup.service
+[Install]
+WantedBy=multi-user.target
+
+[Unit]
+Description=Coolify Create Docker Network
+ConditionFirstBoot=true
+
+[Service]
+ExecStart=docker network create --attachable coolify
+EOF
+
+# 7. Start Coolify
+COPY <<EOF /usr/share/containers/systemd/coolify.service
+[Install]
+WantedBy=multi-user.target
+
+[Unit]
+Description=Coolify
+Requires=coolify-setup.service
+
+[Service]
+ExecStart=docker compose --env-file ${COOLIFY_BASE}/coolify/source/.env \
+                         -f ${COOLIFY_BASE}/coolify/source/docker-compose.yml \
+                         -f ${COOLIFY_BASE}/coolify/source/docker-compose.prod.yml up \
+                         -d --pull always --remove-orphans --force-recreate
+EOF
