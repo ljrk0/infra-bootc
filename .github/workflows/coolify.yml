@@ -8,8 +8,9 @@ jobs:
   coolify:
     runs-on: ubuntu-latest
     steps:
-      - name: run podman build
+      - name: checkout repo on build server
         uses: actions/checkout@v4
+      - name: run podman build
         run: podman build -t coolify coolify
       - name: push image to ghcr.io
         run: podman push --creds=${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} coolify ghcr.io/ljrk0/coolify
