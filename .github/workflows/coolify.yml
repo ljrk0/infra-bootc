@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: checkout repo on build server
         uses: actions/checkout@v4
-      - name: run podman build
-        run: podman build -t coolify coolify
+      - name: run docker build
+        run: docker build -t coolify coolify
       - name: push image to ghcr.io
-        run: podman push --creds=${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} coolify ghcr.io/ljrk0/coolify
+        run: docker push --creds=${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} coolify ghcr.io/ljrk0/coolify
