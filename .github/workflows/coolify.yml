@@ -11,6 +11,6 @@ jobs:
       - name: checkout repo on build server
         uses: actions/checkout@v4
       - name: run docker build
-        run: docker build -t coolify coolify
+        run: docker build -t coolify -f Containerfile coolify
       - name: push image to ghcr.io
         run: docker push --creds=${{ github.actor }}:${{ secrets.GITHUB_TOKEN }} coolify ghcr.io/ljrk0/coolify
